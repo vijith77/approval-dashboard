@@ -1,285 +1,577 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dashboard Permissions Manager</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Users & Groups — Next Retail</title>
+
+  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
   <style>
-    body { background: #f8f9fa; }
-    .badge-rule { font-size: 0.85rem; margin-right: 5px; }
-    .perm-level { width: 120px; }
-    .btn-small { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+    body { background:#f6f8fb; }
+    .status-badge { padding: 0.35rem 0.6rem; border-radius: 0.6rem; font-weight:600; font-size:0.85rem; }
+    .approved { background:#d4edda; color:#155724; }
+    .pending  { background:#fff3cd; color:#856404; }
+    .rejected { background:#f8d7da; color:#721c24; }
+    .tab-btn { min-width: 120px; }
+    .flash { animation: flashHighlight 1.2s ease; }
+    @keyframes flashHighlight {
+      0% { background: #fff9c4; }
+      100% { background: transparent; }
+    }
+    .small-muted { font-size:0.85rem; color:#6b7280; }
+    .card { border-radius:12px; }
   </style>
 </head>
 <body>
   <div class="container py-4">
-    <h2 class="mb-4">Dashboard Permissions Manager</h2>
-
-    <div class="row mb-3">
-      <div class="col-md-4">
-        <label for="dashboardSelect" class="form-label">Select Dashboard:</label>
-        <select id="dashboardSelect" class="form-select"></select>
+    <div class="d-flex align-items-center mb-3">
+      <h2 class="me-auto">Users & Groups</h2>
+      <div>
+        <button class="btn btn-outline-primary me-2" id="btnCreateGroup"><i class="bi bi-people-fill"></i> Create group</button>
+        <button class="btn btn-primary" id="btnCreateUser"><i class="bi bi-person-plus-fill"></i> Create user</button>
       </div>
     </div>
 
-    <div id="permissionsSection" style="display: none;">
-      <h5>Permissions for <span id="selectedDName"></span></h5>
-      <table class="table table-bordered bg-white">
-        <thead class="table-light">
-          <tr>
-            <th>Assignee (User / Group / Rule)</th>
-            <th>Permission Level</th>
-            <th>Source</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="permTable"></tbody>
-      </table>
+    <div class="card p-3 mb-3">
+      <div class="d-flex gap-2 mb-3">
+        <button class="btn btn-sm btn-outline-secondary tab-btn active" id="tabUsers">Users</button>
+        <button class="btn btn-sm btn-outline-secondary tab-btn" id="tabGroups">Groups</button>
+      </div>
 
-      <hr />
-      <h6>Add / Update Permissions</h6>
-      <div class="row mb-2">
-        <div class="col-md-5">
-          <select id="assigneeSelect" class="form-select">
-            <option value="">-- Select User or Group --</option>
-          </select>
+      <!-- USERS VIEW -->
+      <div id="viewUsers">
+        <div class="row g-2 mb-3">
+          <div class="col-md-4">
+            <input id="searchInput" class="form-control" placeholder="Search by name or email..." />
+          </div>
+          <div class="col-md-3">
+            <select id="filterGroup" class="form-select">
+              <option value="">Filter by group (All)</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <select id="filterStatus" class="form-select">
+              <option value="">All statuses</option>
+              <option value="Approved">Approved</option>
+              <option value="Pending">Pending</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div class="col-md-3 text-end small-muted">
+            <span id="kpiTotal" class="me-3">Total users: 0</span>
+            <span id="kpiPending">Pending: 0</span>
+          </div>
         </div>
-        <div class="col-md-3">
-          <select id="permLevelSelect" class="form-select">
-            <option value="VIEW">VIEW</option>
-            <option value="SHARE">SHARE</option>
-            <option value="EDIT">EDIT</option>
-          </select>
-        </div>
-        <div class="col-md-2">
-          <button id="btnAddPerm" class="btn btn-primary">Add / Update</button>
-        </div>
-        <div class="col-md-2">
-          <button id="btnRuleAll" class="btn btn-outline-secondary">Share with All Users</button>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th style="width:28%;">Name</th>
+                <th style="width:22%;">E-mail</th>
+                <th style="width:16%;">Group</th>
+                <th style="width:12%;">Workspace</th>
+                <th style="width:12%;">Status</th>
+                <th style="width:10%;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="userTable"></tbody>
+          </table>
         </div>
       </div>
+
+      <!-- GROUPS VIEW -->
+      <div id="viewGroups" style="display:none;">
+        <div class="row mb-2">
+          <div class="col-md-6">
+            <input id="groupSearch" class="form-control" placeholder="Search groups..." />
+          </div>
+        </div>
+        <div id="groupsList" class="row gy-2"></div>
+      </div>
+    </div>
+
+    <div class="text-muted small">
+      <div><strong>Note:</strong> This demo stores data locally (localStorage). Replace data functions with API calls to integrate backend.</div>
     </div>
   </div>
 
-  <script>
-    // ---------------- Example in-memory data; replace with API calls ---------------
-
-    // Users and Groups
-    const users = [
-      { id: "u1", name: "Alice" },
-      { id: "u2", name: "Bob" },
-      { id: "u3", name: "Charlie" }
-    ];
-    const groups = [
-      { id: "g1", name: "Admins" },
-      { id: "g2", name: "Sales" }
-    ];
-
-    // Workspaces
-    const workspaces = [
-      { id: "w1", name: "Main WS", parentWorkspaceId: null, permissions: [
-        // e.g. g1 has MANAGE
-        { assigneeId: "g1", type: "group", permissionLevel: "MANAGE" },
-        { assigneeId: "u1", type: "user", permissionLevel: "VIEW" }
-      ] }
-    ];
-
-    // Dashboards
-    const dashboards = [
-      { id: "d1", name: "Sales Dashboard", workspaceId: "w1", permissions: [
-        // direct dashboard permissions
-        { assigneeId: "g2", type: "group", permissionLevel: "VIEW" },
-        { ruleType: "allWorkspaceUsers", permissionLevel: "SHARE" }
-      ] }
-    ];
-
-    // Helper: get workspace of dashboard
-    function getWorkspaceOfDashboard(d) {
-      return workspaces.find(w => w.id === d.workspaceId);
-    }
-
-    // Effective permissions calculation
-    function computeEffectivePermissions(dashboard) {
-      const ws = getWorkspaceOfDashboard(dashboard);
-      const result = [];
-      // 1. Inherited from workspace: each workspace permission → maps to dashboard VIEW/SHARE etc (depending on logic)
-      ws.permissions.forEach(wp => {
-        const lvl = (wp.permissionLevel === "MANAGE" || wp.permissionLevel === "ANALYZE") ? "EDIT"
-                   : (wp.permissionLevel === "VIEW") ? "VIEW" : "SHARE";
-        result.push({
-          assigneeId: wp.assigneeId,
-          type: wp.type,
-          permissionLevel: lvl,
-          source: "inherited"
-        });
-      });
-      // 2. Direct dashboard permissions (override or add)
-      dashboard.permissions.forEach(dp => {
-        if (dp.ruleType) {
-          result.push({
-            assigneeId: null,
-            type: "rule",
-            ruleType: dp.ruleType,
-            permissionLevel: dp.permissionLevel,
-            source: "direct"
-          });
-        } else {
-          result.push({
-            assigneeId: dp.assigneeId,
-            type: dp.type,
-            permissionLevel: dp.permissionLevel,
-            source: "direct"
-          });
-        }
-      });
-      return result;
-    }
-
-    // UI references
-    const dashboardSelect = document.getElementById("dashboardSelect");
-    const permTable = document.getElementById("permTable");
-    const selectedDName = document.getElementById("selectedDName");
-    const assigneeSelect = document.getElementById("assigneeSelect");
-    const permLevelSelect = document.getElementById("permLevelSelect");
-    const btnAddPerm = document.getElementById("btnAddPerm");
-    const btnRuleAll = document.getElementById("btnRuleAll");
-    const permissionsSection = document.getElementById("permissionsSection");
-
-    // Populate dashboard dropdown
-    dashboards.forEach(d => {
-      const opt = document.createElement("option");
-      opt.value = d.id;
-      opt.textContent = d.name;
-      dashboardSelect.appendChild(opt);
-    });
-
-    dashboardSelect.addEventListener("change", () => {
-      const dId = dashboardSelect.value;
-      if (!dId) {
-        permissionsSection.style.display = "none";
-        return;
-      }
-      permissionsSection.style.display = "";
-      const dash = dashboards.find(d => d.id === dId);
-      selectedDName.textContent = dash.name;
-      renderPermTable(dash);
-      populateAssigneeSelect(dash);
-    });
-
-    function renderPermTable(dash) {
-      permTable.innerHTML = "";
-      const eff = computeEffectivePermissions(dash);
-      eff.forEach((ep, idx) => {
-        let name = "";
-        if (ep.type === "user") {
-          const u = users.find(u => u.id === ep.assigneeId);
-          name = u ? `User: ${u.name}` : ep.assigneeId;
-        } else if (ep.type === "group") {
-          const g = groups.find(g => g.id === ep.assigneeId);
-          name = g ? `Group: ${g.name}` : ep.assigneeId;
-        } else if (ep.type === "rule") {
-          name = `Rule: ${ep.ruleType}`;
-        }
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${name}</td>
-          <td>
-            <select class="form-select perm-level" onchange="updateDirectPermission('${dash.id}', ${idx}, this.value)">
-              <option value="VIEW" ${ep.permissionLevel === "VIEW" ? "selected" : ""}>VIEW</option>
-              <option value="SHARE" ${ep.permissionLevel === "SHARE" ? "selected" : ""}>SHARE</option>
-              <option value="EDIT" ${ep.permissionLevel === "EDIT" ? "selected" : ""}>EDIT</option>
+  <!-- Create/Edit User Modal -->
+  <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form id="userForm" class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="userModalTitle">Create user</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="userId" />
+          <div class="mb-3">
+            <label class="form-label">Full name</label>
+            <input id="userName" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">E-mail</label>
+            <input id="userEmail" type="email" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Group</label>
+            <select id="userGroup" class="form-select"></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Workspace</label>
+            <input id="userWorkspace" class="form-control" placeholder="Demo Workspace" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Status</label>
+            <select id="userStatus" class="form-select">
+              <option>Pending</option>
+              <option>Approved</option>
+              <option>Rejected</option>
             </select>
-          </td>
-          <td>${ep.source}</td>
+          </div>
+
+          <div class="form-text">Permissions (example): select default permission level for this user.</div>
+          <div class="mt-2">
+            <select id="userPermission" class="form-select">
+              <option value="VIEW">VIEW</option>
+              <option value="SHARE">SHARE</option>
+              <option value="EDIT">EDIT</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveUserBtn">Save user</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Create/Edit Group Modal -->
+  <div class="modal fade" id="groupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form id="groupForm" class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="groupModalTitle">Create group</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="groupId" />
+          <div class="mb-3">
+            <label class="form-label">Group name</label>
+            <input id="groupName" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Members (choose)</label>
+            <select id="groupMembers" class="form-select" multiple></select>
+            <div class="form-text">Select users to add to this group.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save group</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bootstrap + script -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    /***********************
+     * Data layer (localStorage)
+     ***********************/
+    const STORAGE_KEY = "nr_users_groups_v1";
+
+    function defaultData() {
+      return {
+        users: [
+          { id: id(), name: "John Doe", email: "john@example.com", groupId: "g-admins", workspace: "Demo Workspace", status: "Pending", permission: "VIEW" },
+          { id: id(), name: "Jane Doe", email: "jane@example.com", groupId: "g-sales", workspace: "Demo Workspace", status: "Approved", permission: "SHARE" },
+          { id: id(), name: "John Smith", email: "smith@example.com", groupId: "g-devs", workspace: "Demo Workspace", status: "Rejected", permission: "VIEW" }
+        ],
+        groups: [
+          { id: "g-admins", name: "Administrators", memberIds: [] },
+          { id: "g-sales", name: "Sales", memberIds: [] },
+          { id: "g-devs", name: "Developers", memberIds: [] }
+        ]
+      };
+    }
+
+    function loadData() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        const d = defaultData();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+        return d;
+      }
+      try { return JSON.parse(raw); } catch (e) { const d = defaultData(); localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); return d; }
+    }
+
+    function saveData(data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    // simple id
+    function id() { return "u_" + Math.random().toString(36).slice(2,9); }
+
+    /***********************
+     * App state
+     ***********************/
+    let store = loadData();
+
+    /***********************
+     * UI helpers & rendering
+     ***********************/
+    const userTable = document.getElementById("userTable");
+    const filterGroup = document.getElementById("filterGroup");
+    const filterStatus = document.getElementById("filterStatus");
+    const searchInput = document.getElementById("searchInput");
+    const kpiTotal = document.getElementById("kpiTotal");
+    const kpiPending = document.getElementById("kpiPending");
+
+    function refreshKPI() {
+      kpiTotal.textContent = "Total users: " + store.users.length;
+      const pend = store.users.filter(u => u.status === "Pending").length;
+      kpiPending.textContent = "Pending: " + pend;
+    }
+
+    function getGroupName(gid) {
+      const g = store.groups.find(x => x.id === gid);
+      return g ? g.name : "-";
+    }
+
+    function statusBadge(status) {
+      const cls = status === "Approved" ? "approved" : status === "Pending" ? "pending" : "rejected";
+      return `<span class="status-badge ${cls}">${status}</span>`;
+    }
+
+    function renderUsers() {
+      const q = (searchInput.value || "").toLowerCase().trim();
+      const gFilter = filterGroup.value;
+      const sFilter = filterStatus.value;
+
+      userTable.innerHTML = "";
+
+      let users = store.users.slice().sort((a,b) => a.name.localeCompare(b.name));
+
+      if (q) users = users.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+      if (gFilter) users = users.filter(u => u.groupId === gFilter);
+      if (sFilter) users = users.filter(u => u.status === sFilter);
+
+      users.forEach(u => {
+        const tr = document.createElement("tr");
+        tr.id = "row_" + u.id;
+        tr.innerHTML = `
           <td>
-            <button class="btn btn-sm btn-danger btn-small" onclick="removeDirectPermission('${dash.id}', ${idx})">Remove</button>
+            <div class="d-flex align-items-center">
+              <div class="flex-grow-1">
+                <div class="fw-semibold">${u.name}</div>
+                <div class="small text-muted">${u.permission} • ${u.email}</div>
+              </div>
+            </div>
+          </td>
+          <td>${u.email}</td>
+          <td>${getGroupName(u.groupId)}</td>
+          <td>${u.workspace || "-"}</td>
+          <td>${statusBadge(u.status)}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-outline-success" title="Approve" onclick="setStatus('${u.id}','Approved')"><i class="bi bi-check-lg"></i></button>
+              <button class="btn btn-sm btn-outline-warning" title="Set Pending" onclick="setStatus('${u.id}','Pending')"><i class="bi bi-hourglass-split"></i></button>
+              <button class="btn btn-sm btn-outline-danger" title="Reject" onclick="setStatus('${u.id}','Rejected')"><i class="bi bi-x-lg"></i></button>
+              <button class="btn btn-sm btn-outline-secondary" title="Edit" onclick="openEditUser('${u.id}')"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteUser('${u.id}')"><i class="bi bi-trash"></i></button>
+            </div>
           </td>
         `;
-        permTable.appendChild(tr);
+        userTable.appendChild(tr);
+      });
+
+      refreshKPI();
+    }
+
+    function renderGroupFilterOptions() {
+      filterGroup.innerHTML = `<option value="">Filter by group (All)</option>`;
+      store.groups.forEach(g => {
+        const opt = document.createElement("option");
+        opt.value = g.id;
+        opt.text = g.name;
+        filterGroup.appendChild(opt);
       });
     }
 
-    // Populate assignee dropdown (users + groups), filtering out those already with direct permission
-    function populateAssigneeSelect(dash) {
-      assigneeSelect.innerHTML = `<option value="">-- Select User or Group --</option>`;
-      const existing = dash.permissions
-        .map(p => p.assigneeId)
-        .filter(x => x != null);
-      users.forEach(u => {
-        if (!existing.includes(u.id)) {
-          const opt = document.createElement("option");
-          opt.value = `user:${u.id}`;
-          opt.textContent = `User: ${u.name}`;
-          assigneeSelect.appendChild(opt);
-        }
-      });
-      groups.forEach(g => {
-        if (!existing.includes(g.id)) {
-          const opt = document.createElement("option");
-          opt.value = `group:${g.id}`;
-          opt.textContent = `Group: ${g.name}`;
-          assigneeSelect.appendChild(opt);
-        }
+    /***********************
+     * CRUD operations for Users
+     ***********************/
+    // open create modal
+    const userModalEl = document.getElementById("userModal");
+    const userModal = new bootstrap.Modal(userModalEl);
+    document.getElementById("btnCreateUser").addEventListener("click", () => openCreateUser());
+
+    function openCreateUser() {
+      document.getElementById("userModalTitle").textContent = "Create user";
+      document.getElementById("userId").value = "";
+      document.getElementById("userName").value = "";
+      document.getElementById("userEmail").value = "";
+      document.getElementById("userWorkspace").value = "Demo Workspace";
+      document.getElementById("userStatus").value = "Pending";
+      document.getElementById("userPermission").value = "VIEW";
+      populateUserGroupSelect();
+      userModal.show();
+    }
+
+    function openEditUser(uid) {
+      const u = store.users.find(x => x.id === uid);
+      if (!u) return alert("User not found");
+      document.getElementById("userModalTitle").textContent = "Edit user";
+      document.getElementById("userId").value = u.id;
+      document.getElementById("userName").value = u.name;
+      document.getElementById("userEmail").value = u.email;
+      document.getElementById("userWorkspace").value = u.workspace;
+      document.getElementById("userStatus").value = u.status;
+      document.getElementById("userPermission").value = u.permission || "VIEW";
+      populateUserGroupSelect(u.groupId);
+      userModal.show();
+    }
+
+    function populateUserGroupSelect(selectedId) {
+      const sel = document.getElementById("userGroup");
+      sel.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.text = "-- select group --";
+      sel.appendChild(empty);
+      store.groups.forEach(g => {
+        const opt = document.createElement("option");
+        opt.value = g.id;
+        opt.text = g.name;
+        if (selectedId && selectedId === g.id) opt.selected = true;
+        sel.appendChild(opt);
       });
     }
 
-    // Add or update direct permission
-    btnAddPerm.addEventListener("click", () => {
-      const dashId = dashboardSelect.value;
-      const dash = dashboards.find(d => d.id === dashId);
-      const ass = assigneeSelect.value;
-      const lvl = permLevelSelect.value;
-      if (!ass) return;
-      const [type, id] = ass.split(":");
-      // If exists, update; else add
-      const existing = dash.permissions.find(p => p.assigneeId === id);
-      if (existing) {
-        existing.permissionLevel = lvl;
+    document.getElementById("userForm").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      const uid = document.getElementById("userId").value || null;
+      const name = document.getElementById("userName").value.trim();
+      const email = document.getElementById("userEmail").value.trim();
+      const groupId = document.getElementById("userGroup").value || null;
+      const workspace = document.getElementById("userWorkspace").value.trim();
+      const status = document.getElementById("userStatus").value;
+      const permission = document.getElementById("userPermission").value;
+
+      if (!name || !email) return alert("Name and email are required.");
+
+      if (uid) {
+        // update
+        const idx = store.users.findIndex(x => x.id === uid);
+        if (idx === -1) return alert("User not found");
+        store.users[idx] = { ...store.users[idx], name, email, groupId, workspace, status, permission };
+        saveData(store);
+        renderUsers();
+        flashRow(uid);
+        userModal.hide();
       } else {
-        dash.permissions.push({ assigneeId: id, type: type, permissionLevel: lvl });
+        // create
+        const newUser = { id: id(), name, email, groupId, workspace, status, permission };
+        store.users.push(newUser);
+        saveData(store);
+        renderUsers();
+        userModal.hide();
       }
-      renderPermTable(dash);
-      populateAssigneeSelect(dash);
+      refreshGroupsList();
     });
 
-    // Share with all users rule
-    btnRuleAll.addEventListener("click", () => {
-      const dash = dashboards.find(d => d.id === dashboardSelect.value);
-      // see if rule already exists
-      const existingRule = dash.permissions.find(p => p.ruleType === "allWorkspaceUsers");
-      if (!existingRule) {
-        dash.permissions.push({ ruleType: "allWorkspaceUsers", permissionLevel: "VIEW" });
-      }
-      renderPermTable(dash);
-    });
-
-    // Remove direct permission (only direct ones)
-    window.removeDirectPermission = (dashId, permIndex) => {
-      const dash = dashboards.find(d => d.id === dashId);
-      // Find direct permissions only
-      const directList = dash.permissions;
-      if (permIndex < directList.length) {
-        directList.splice(permIndex, 1);
-      }
-      renderPermTable(dash);
-      populateAssigneeSelect(dash);
-    };
-
-    // Update direct permission level
-    window.updateDirectPermission = (dashId, permIndex, newLvl) => {
-      const dash = dashboards.find(d => d.id === dashId);
-      if (dash.permissions[permIndex]) {
-        dash.permissions[permIndex].permissionLevel = newLvl;
-      }
-      renderPermTable(dash);
-    };
-
-    // Preselect first dashboard
-    if (dashboards.length > 0) {
-      dashboardSelect.value = dashboards[0].id;
-      dashboardSelect.dispatchEvent(new Event("change"));
+    function deleteUser(uid) {
+      if (!confirm("Delete user?")) return;
+      store.users = store.users.filter(x => x.id !== uid);
+      // remove from groups' memberIds
+      store.groups.forEach(g => g.memberIds = g.memberIds.filter(m => m !== uid));
+      saveData(store);
+      renderUsers();
+      renderGroupsList();
     }
+
+    function setStatus(uid, status) {
+      const u = store.users.find(x => x.id === uid);
+      if (!u) return;
+      u.status = status;
+      saveData(store);
+      renderUsers();
+      flashRow(uid);
+    }
+
+    function flashRow(uid) {
+      const tr = document.getElementById("row_" + uid);
+      if (!tr) return;
+      tr.classList.add("flash");
+      setTimeout(() => tr.classList.remove("flash"), 1200);
+    }
+
+    /***********************
+     * Groups management
+     ***********************/
+    const groupModalEl = document.getElementById("groupModal");
+    const groupModal = new bootstrap.Modal(groupModalEl);
+    document.getElementById("btnCreateGroup").addEventListener("click", () => openCreateGroup());
+
+    function openCreateGroup() {
+      document.getElementById("groupModalTitle").textContent = "Create group";
+      document.getElementById("groupId").value = "";
+      document.getElementById("groupName").value = "";
+      populateGroupMembersSelect([]);
+      groupModal.show();
+    }
+
+    function openEditGroup(gid) {
+      const g = store.groups.find(x => x.id === gid);
+      if (!g) return alert("Group not found");
+      document.getElementById("groupModalTitle").textContent = "Edit group";
+      document.getElementById("groupId").value = g.id;
+      document.getElementById("groupName").value = g.name;
+      populateGroupMembersSelect(g.memberIds);
+      groupModal.show();
+    }
+
+    function populateGroupMembersSelect(selectedIds) {
+      const sel = document.getElementById("groupMembers");
+      sel.innerHTML = "";
+      store.users.forEach(u => {
+        const opt = document.createElement("option");
+        opt.value = u.id;
+        opt.text = `${u.name} (${u.email})`;
+        if (selectedIds && selectedIds.includes(u.id)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    document.getElementById("groupForm").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      const gid = document.getElementById("groupId").value || null;
+      const name = document.getElementById("groupName").value.trim();
+      const members = Array.from(document.getElementById("groupMembers").selectedOptions).map(o => o.value);
+
+      if (!name) return alert("Group name required");
+
+      if (gid) {
+        const idx = store.groups.findIndex(x => x.id === gid);
+        if (idx === -1) return alert("Group not found");
+        store.groups[idx].name = name;
+        store.groups[idx].memberIds = members.slice();
+      } else {
+        const newGid = "g_" + Math.random().toString(36).slice(2,8);
+        store.groups.push({ id: newGid, name, memberIds: members.slice() });
+      }
+
+      // synchronize user's groupId to reflect membership (for demo we pick first group if present)
+      store.users.forEach(u => {
+        // if a user is in exactly 1 group, show that; otherwise leave existing. (This is demonstration logic)
+        const groupsForUser = store.groups.filter(g => g.memberIds.includes(u.id));
+        if (groupsForUser.length === 1) {
+          u.groupId = groupsForUser[0].id;
+        }
+      });
+
+      saveData(store);
+      groupModal.hide();
+      renderGroupsList();
+      renderUsers();
+      renderGroupFilterOptions();
+    });
+
+    function renderGroupsList() {
+      const cont = document.getElementById("groupsList");
+      const q = (document.getElementById("groupSearch").value || "").toLowerCase();
+      cont.innerHTML = "";
+      let list = store.groups.slice().sort((a,b) => a.name.localeCompare(b.name));
+      if (q) list = list.filter(g => g.name.toLowerCase().includes(q));
+      list.forEach(g => {
+        const col = document.createElement("div");
+        col.className = "col-md-4";
+        const card = document.createElement("div");
+        card.className = "card p-3";
+        card.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">${g.name}</div>
+              <div class="small text-muted">${g.memberIds.length} member(s)</div>
+            </div>
+            <div class="text-end">
+              <button class="btn btn-sm btn-outline-secondary me-1" onclick="openEditGroup('${g.id}')"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteGroup('${g.id}')"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
+        `;
+        col.appendChild(card);
+        cont.appendChild(col);
+      });
+    }
+
+    function deleteGroup(gid) {
+      if (!confirm("Delete group? This removes the group but leaves users intact.")) return;
+      // remove group's member references from users if their groupId equals gid
+      store.users.forEach(u => { if (u.groupId === gid) u.groupId = null; });
+      store.groups = store.groups.filter(g => g.id !== gid);
+      saveData(store);
+      renderGroupsList();
+      renderUsers();
+      renderGroupFilterOptions();
+    }
+
+    function refreshGroupsList() {
+      renderGroupsList();
+      renderGroupFilterOptions();
+    }
+
+    /***********************
+     * Wiring up events & initial render
+     ***********************/
+    document.getElementById("tabUsers").addEventListener("click", () => {
+      document.getElementById("viewUsers").style.display = "";
+      document.getElementById("viewGroups").style.display = "none";
+      document.getElementById("tabUsers").classList.add("active");
+      document.getElementById("tabGroups").classList.remove("active");
+    });
+    document.getElementById("tabGroups").addEventListener("click", () => {
+      document.getElementById("viewUsers").style.display = "none";
+      document.getElementById("viewGroups").style.display = "";
+      document.getElementById("tabGroups").classList.add("active");
+      document.getElementById("tabUsers").classList.remove("active");
+    });
+
+    // Filters + search
+    searchInput.addEventListener("input", () => renderUsers());
+    filterGroup.addEventListener("change", () => renderUsers());
+    filterStatus.addEventListener("change", () => renderUsers());
+    document.getElementById("groupSearch").addEventListener("input", () => renderGroupsList());
+
+    // initial populate
+    function boot() {
+      // Make sure group memberIds reflect initial store users if empty lists
+      store.groups.forEach(g => {
+        if (!g.memberIds) g.memberIds = [];
+      });
+      // if groups have no members recorded but users have groupId, reconcile
+      store.users.forEach(u => {
+        if (u.groupId) {
+          const g = store.groups.find(x => x.id === u.groupId);
+          if (g && !g.memberIds.includes(u.id)) g.memberIds.push(u.id);
+        }
+      });
+
+      renderGroupFilterOptions();
+      renderUsers();
+      renderGroupsList();
+    }
+
+    boot();
   </script>
 </body>
 </html>
