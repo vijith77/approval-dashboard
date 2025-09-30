@@ -3,78 +3,283 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Users & Groups – Next Retail</title>
+  <title>Dashboard Permissions Manager</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #f8f9fa; }
-    .status-badge { padding: 4px 8px; border-radius: 8px; font-size: 0.8rem; }
-    .approved { background: #d4edda; color: #155724; }
-    .pending { background: #fff3cd; color: #856404; }
-    .rejected { background: #f8d7da; color: #721c24; }
-    .action-btn { margin-right: 5px; }
+    .badge-rule { font-size: 0.85rem; margin-right: 5px; }
+    .perm-level { width: 120px; }
+    .btn-small { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
   </style>
 </head>
 <body>
   <div class="container py-4">
-    <h2 class="mb-4">Users & Groups</h2>
-    <div class="d-flex justify-content-end mb-3">
-      <button class="btn btn-primary me-2">+ Create User</button>
-      <button class="btn btn-secondary me-2">+ Create Group</button>
-      <button class="btn btn-success">+ Invite User</button>
+    <h2 class="mb-4">Dashboard Permissions Manager</h2>
+
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <label for="dashboardSelect" class="form-label">Select Dashboard:</label>
+        <select id="dashboardSelect" class="form-select"></select>
+      </div>
     </div>
 
-    <table class="table table-hover table-bordered bg-white">
-      <thead class="table-light">
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">E-mail</th>
-          <th scope="col">Group</th>
-          <th scope="col">Workspace</th>
-          <th scope="col">Status</th>
-          <th scope="col">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="userTable"></tbody>
-    </table>
+    <div id="permissionsSection" style="display: none;">
+      <h5>Permissions for <span id="selectedDName"></span></h5>
+      <table class="table table-bordered bg-white">
+        <thead class="table-light">
+          <tr>
+            <th>Assignee (User / Group / Rule)</th>
+            <th>Permission Level</th>
+            <th>Source</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="permTable"></tbody>
+      </table>
+
+      <hr />
+      <h6>Add / Update Permissions</h6>
+      <div class="row mb-2">
+        <div class="col-md-5">
+          <select id="assigneeSelect" class="form-select">
+            <option value="">-- Select User or Group --</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select id="permLevelSelect" class="form-select">
+            <option value="VIEW">VIEW</option>
+            <option value="SHARE">SHARE</option>
+            <option value="EDIT">EDIT</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <button id="btnAddPerm" class="btn btn-primary">Add / Update</button>
+        </div>
+        <div class="col-md-2">
+          <button id="btnRuleAll" class="btn btn-outline-secondary">Share with All Users</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
-    // Dummy users (replace with backend API later)
+    // ---------------- Example in-memory data; replace with API calls ---------------
+
+    // Users and Groups
     const users = [
-      { name: "John Doe", email: "john@example.com", group: "Administrators", workspace: "Demo Workspace", status: "Pending" },
-      { name: "Jane Doe", email: "jane@example.com", group: "Sales", workspace: "Demo Workspace", status: "Approved" },
-      { name: "John Smith", email: "smith@example.com", group: "Developers", workspace: "Demo Workspace", status: "Rejected" }
+      { id: "u1", name: "Alice" },
+      { id: "u2", name: "Bob" },
+      { id: "u3", name: "Charlie" }
+    ];
+    const groups = [
+      { id: "g1", name: "Admins" },
+      { id: "g2", name: "Sales" }
     ];
 
-    // Render users
-    const tableBody = document.getElementById("userTable");
-    function renderTable() {
-      tableBody.innerHTML = "";
-      users.forEach((u, index) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${u.name}</td>
-          <td>${u.email}</td>
-          <td>${u.group}</td>
-          <td>${u.workspace}</td>
-          <td><span class="status-badge ${u.status.toLowerCase()}">${u.status}</span></td>
+    // Workspaces
+    const workspaces = [
+      { id: "w1", name: "Main WS", parentWorkspaceId: null, permissions: [
+        // e.g. g1 has MANAGE
+        { assigneeId: "g1", type: "group", permissionLevel: "MANAGE" },
+        { assigneeId: "u1", type: "user", permissionLevel: "VIEW" }
+      ] }
+    ];
+
+    // Dashboards
+    const dashboards = [
+      { id: "d1", name: "Sales Dashboard", workspaceId: "w1", permissions: [
+        // direct dashboard permissions
+        { assigneeId: "g2", type: "group", permissionLevel: "VIEW" },
+        { ruleType: "allWorkspaceUsers", permissionLevel: "SHARE" }
+      ] }
+    ];
+
+    // Helper: get workspace of dashboard
+    function getWorkspaceOfDashboard(d) {
+      return workspaces.find(w => w.id === d.workspaceId);
+    }
+
+    // Effective permissions calculation
+    function computeEffectivePermissions(dashboard) {
+      const ws = getWorkspaceOfDashboard(dashboard);
+      const result = [];
+      // 1. Inherited from workspace: each workspace permission → maps to dashboard VIEW/SHARE etc (depending on logic)
+      ws.permissions.forEach(wp => {
+        const lvl = (wp.permissionLevel === "MANAGE" || wp.permissionLevel === "ANALYZE") ? "EDIT"
+                   : (wp.permissionLevel === "VIEW") ? "VIEW" : "SHARE";
+        result.push({
+          assigneeId: wp.assigneeId,
+          type: wp.type,
+          permissionLevel: lvl,
+          source: "inherited"
+        });
+      });
+      // 2. Direct dashboard permissions (override or add)
+      dashboard.permissions.forEach(dp => {
+        if (dp.ruleType) {
+          result.push({
+            assigneeId: null,
+            type: "rule",
+            ruleType: dp.ruleType,
+            permissionLevel: dp.permissionLevel,
+            source: "direct"
+          });
+        } else {
+          result.push({
+            assigneeId: dp.assigneeId,
+            type: dp.type,
+            permissionLevel: dp.permissionLevel,
+            source: "direct"
+          });
+        }
+      });
+      return result;
+    }
+
+    // UI references
+    const dashboardSelect = document.getElementById("dashboardSelect");
+    const permTable = document.getElementById("permTable");
+    const selectedDName = document.getElementById("selectedDName");
+    const assigneeSelect = document.getElementById("assigneeSelect");
+    const permLevelSelect = document.getElementById("permLevelSelect");
+    const btnAddPerm = document.getElementById("btnAddPerm");
+    const btnRuleAll = document.getElementById("btnRuleAll");
+    const permissionsSection = document.getElementById("permissionsSection");
+
+    // Populate dashboard dropdown
+    dashboards.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = d.name;
+      dashboardSelect.appendChild(opt);
+    });
+
+    dashboardSelect.addEventListener("change", () => {
+      const dId = dashboardSelect.value;
+      if (!dId) {
+        permissionsSection.style.display = "none";
+        return;
+      }
+      permissionsSection.style.display = "";
+      const dash = dashboards.find(d => d.id === dId);
+      selectedDName.textContent = dash.name;
+      renderPermTable(dash);
+      populateAssigneeSelect(dash);
+    });
+
+    function renderPermTable(dash) {
+      permTable.innerHTML = "";
+      const eff = computeEffectivePermissions(dash);
+      eff.forEach((ep, idx) => {
+        let name = "";
+        if (ep.type === "user") {
+          const u = users.find(u => u.id === ep.assigneeId);
+          name = u ? `User: ${u.name}` : ep.assigneeId;
+        } else if (ep.type === "group") {
+          const g = groups.find(g => g.id === ep.assigneeId);
+          name = g ? `Group: ${g.name}` : ep.assigneeId;
+        } else if (ep.type === "rule") {
+          name = `Rule: ${ep.ruleType}`;
+        }
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${name}</td>
           <td>
-            <button class="btn btn-sm btn-success action-btn" onclick="updateStatus(${index}, 'Approved')">Approve</button>
-            <button class="btn btn-sm btn-warning action-btn" onclick="updateStatus(${index}, 'Pending')">Pending</button>
-            <button class="btn btn-sm btn-danger action-btn" onclick="updateStatus(${index}, 'Rejected')">Reject</button>
+            <select class="form-select perm-level" onchange="updateDirectPermission('${dash.id}', ${idx}, this.value)">
+              <option value="VIEW" ${ep.permissionLevel === "VIEW" ? "selected" : ""}>VIEW</option>
+              <option value="SHARE" ${ep.permissionLevel === "SHARE" ? "selected" : ""}>SHARE</option>
+              <option value="EDIT" ${ep.permissionLevel === "EDIT" ? "selected" : ""}>EDIT</option>
+            </select>
+          </td>
+          <td>${ep.source}</td>
+          <td>
+            <button class="btn btn-sm btn-danger btn-small" onclick="removeDirectPermission('${dash.id}', ${idx})">Remove</button>
           </td>
         `;
-        tableBody.appendChild(row);
+        permTable.appendChild(tr);
       });
     }
 
-    // Update status
-    function updateStatus(index, newStatus) {
-      users[index].status = newStatus;
-      renderTable();
+    // Populate assignee dropdown (users + groups), filtering out those already with direct permission
+    function populateAssigneeSelect(dash) {
+      assigneeSelect.innerHTML = `<option value="">-- Select User or Group --</option>`;
+      const existing = dash.permissions
+        .map(p => p.assigneeId)
+        .filter(x => x != null);
+      users.forEach(u => {
+        if (!existing.includes(u.id)) {
+          const opt = document.createElement("option");
+          opt.value = `user:${u.id}`;
+          opt.textContent = `User: ${u.name}`;
+          assigneeSelect.appendChild(opt);
+        }
+      });
+      groups.forEach(g => {
+        if (!existing.includes(g.id)) {
+          const opt = document.createElement("option");
+          opt.value = `group:${g.id}`;
+          opt.textContent = `Group: ${g.name}`;
+          assigneeSelect.appendChild(opt);
+        }
+      });
     }
 
-    renderTable();
+    // Add or update direct permission
+    btnAddPerm.addEventListener("click", () => {
+      const dashId = dashboardSelect.value;
+      const dash = dashboards.find(d => d.id === dashId);
+      const ass = assigneeSelect.value;
+      const lvl = permLevelSelect.value;
+      if (!ass) return;
+      const [type, id] = ass.split(":");
+      // If exists, update; else add
+      const existing = dash.permissions.find(p => p.assigneeId === id);
+      if (existing) {
+        existing.permissionLevel = lvl;
+      } else {
+        dash.permissions.push({ assigneeId: id, type: type, permissionLevel: lvl });
+      }
+      renderPermTable(dash);
+      populateAssigneeSelect(dash);
+    });
+
+    // Share with all users rule
+    btnRuleAll.addEventListener("click", () => {
+      const dash = dashboards.find(d => d.id === dashboardSelect.value);
+      // see if rule already exists
+      const existingRule = dash.permissions.find(p => p.ruleType === "allWorkspaceUsers");
+      if (!existingRule) {
+        dash.permissions.push({ ruleType: "allWorkspaceUsers", permissionLevel: "VIEW" });
+      }
+      renderPermTable(dash);
+    });
+
+    // Remove direct permission (only direct ones)
+    window.removeDirectPermission = (dashId, permIndex) => {
+      const dash = dashboards.find(d => d.id === dashId);
+      // Find direct permissions only
+      const directList = dash.permissions;
+      if (permIndex < directList.length) {
+        directList.splice(permIndex, 1);
+      }
+      renderPermTable(dash);
+      populateAssigneeSelect(dash);
+    };
+
+    // Update direct permission level
+    window.updateDirectPermission = (dashId, permIndex, newLvl) => {
+      const dash = dashboards.find(d => d.id === dashId);
+      if (dash.permissions[permIndex]) {
+        dash.permissions[permIndex].permissionLevel = newLvl;
+      }
+      renderPermTable(dash);
+    };
+
+    // Preselect first dashboard
+    if (dashboards.length > 0) {
+      dashboardSelect.value = dashboards[0].id;
+      dashboardSelect.dispatchEvent(new Event("change"));
+    }
   </script>
 </body>
 </html>
